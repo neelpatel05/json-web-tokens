@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"github.com/gorilla/mux"
+	"fmt"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	jwt "github.com/dgrijalva/jwt-go"
 	"log"
 	"net/http"
+	"strconv"
+	"time"
 )
 
 const (
@@ -17,8 +20,9 @@ const (
 )
 
 type User struct {
-	Email string
-	Password string
+	Email string `json:"email"`
+	Password string `json:"password"`
+
 }
 
 type finalResult struct {
@@ -26,8 +30,33 @@ type finalResult struct {
 	Message string
 }
 
+type Claims struct {
+	Email string `json:"Email"`
+	jwt.StandardClaims
+}
+
+var jwtKey = []byte("captainjacksparrow")
 var dB *mongo.Database
 var collection *mongo.Collection
+
+func generateJWT(user User) (string, int64) {
+	expirationTime := time.Now().Add(30 * time.Minute)
+	claims := &Claims{
+		Email: user.Email,
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: expirationTime.Unix(),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString(jwtKey)
+	if err!=nil {
+		log.Fatal(err)
+	}
+
+	return tokenString, expirationTime.Unix()
+}
+
+
 
 func registerUser(w http.ResponseWriter, r *http.Request) {
 
@@ -80,9 +109,23 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 	var finalData finalResult
 	if len(result.Email)>0 {
 		if result.Password == formData.Password {
+
+			tokenString, expirationTime := generateJWT(user)
+			expirationTime1, _ := strconv.ParseInt(string(expirationTime), 10, 64)
+
+			if err!=nil {
+				log.Fatal(err)
+			}
+			http.SetCookie(w, &http.Cookie{
+				Name:    "token",
+				Value:   tokenString,
+				Expires: time.Unix(expirationTime1,0),
+			})
+
 			finalData.Status = true
 			finalData.Message = "password correct"
 			_ = json.NewEncoder(w).Encode(finalData)
+
 		} else {
 			finalData.Status = false
 			finalData.Message = "password incorrect"
@@ -108,6 +151,7 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 	var user User
 	user.Email = formData.Email
 	user.Password = formData.Password
+
 
 	result := findUser(collection, user)
 	var finalData finalResult
@@ -190,13 +234,12 @@ func main() {
 	collection = dB.Collection(collectionName)
 
 	// Routers
-	router := mux.NewRouter()
-	router.HandleFunc("/register", registerUser).Methods("POST")
-	router.HandleFunc("/login", loginUser).Methods("GET")
-	router.HandleFunc("/delete", deleteUser).Methods("DELETE")
+	http.HandleFunc("/register", registerUser)
+	http.HandleFunc("/login", loginUser)
+	http.Handle("/delete", isAuthorized(deleteUser))
 
 	// Server Listener
-	err = http.ListenAndServe(":3000",router)
+	err = http.ListenAndServe(":3000",nil)
 	if err!=nil {
 		log.Fatal(err)
 	}
