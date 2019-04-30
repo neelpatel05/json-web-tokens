@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -45,7 +44,6 @@ func registerUser(w http.ResponseWriter, r *http.Request) {
 
 	result1 := findUser(collection, user)
 	var finalData finalResult
-	fmt.Println(len(result1.Email))
 	if len(result1.Email) == 0 {
 		result2 := createUser(collection, user)
 		if result2 == true {
@@ -83,11 +81,11 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 	if len(result.Email)>0 {
 		if result.Password == formData.Password {
 			finalData.Status = true
-			finalData.Message = "authorized"
+			finalData.Message = "password correct"
 			_ = json.NewEncoder(w).Encode(finalData)
 		} else {
 			finalData.Status = false
-			finalData.Message = "not authorized"
+			finalData.Message = "password incorrect"
 			_ = json.NewEncoder(w).Encode(finalData)
 		}
 	} else {
@@ -97,11 +95,43 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func logoutUser(w http.ResponseWriter, r *http.Request) {
-
-}
 
 func deleteUser(w http.ResponseWriter, r *http.Request) {
+
+	decoder := json.NewDecoder(r.Body)
+	var formData User
+	err := decoder.Decode(&formData)
+	if err!=nil {
+		log.Fatal(err)
+	}
+
+	var user User
+	user.Email = formData.Email
+	user.Password = formData.Password
+
+	result := findUser(collection, user)
+	var finalData finalResult
+	if len(result.Email)>0 {
+		if result.Password == formData.Password {
+			if deleteUse(collection, user) {
+				finalData.Status = true
+				finalData.Message = "delete successful"
+				_ = json.NewEncoder(w).Encode(finalData)
+			} else {
+				finalData.Status = false
+				finalData.Message = "delete successful"
+				_ = json.NewEncoder(w).Encode(finalData)
+			}
+		} else {
+			finalData.Status = false
+			finalData.Message = "password incorrect"
+			_ = json.NewEncoder(w).Encode(finalData)
+		}
+	} else {
+		finalData.Status = false
+		finalData.Message = "user not registered"
+		_ = json.NewEncoder(w).Encode(finalData)
+	}
 
 }
 
@@ -123,33 +153,49 @@ func findUser(collection *mongo.Collection, user User) User {
 
 	err := collection.FindOne(context.TODO(), filter).Decode(&localUser)
 	if err!=nil {
-		fmt.Println(localUser)
+		localUser.Email = ""
+		localUser.Password = ""
 	}
 
 	return localUser
 }
 
+func deleteUse(collection *mongo.Collection, user User) bool {
+
+	filter := bson.D{{"email", user.Email}}
+
+	result, err := collection.DeleteMany(context.TODO(), filter)
+	if err!=nil {
+		return false
+	}
+	if result.DeletedCount > 0 {
+		return true
+	} else {
+		return false
+	}
+}
+
 func main() {
 
+	// Database Connections
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI("mongodb://localhost:27017"))
 	if err!=nil {
 		log.Fatal(err)
 	}
-
 	err = client.Ping(context.TODO(), nil)
 	if err!=nil {
 		log.Fatal(err)
 	}
-
 	dB = client.Database(databaseName)
 	collection = dB.Collection(collectionName)
 
+	// Routers
 	router := mux.NewRouter()
 	router.HandleFunc("/register", registerUser).Methods("POST")
 	router.HandleFunc("/login", loginUser).Methods("GET")
-	router.HandleFunc("/logout", logoutUser).Methods("GET")
-	router.HandleFunc("/delete", deleteUser).Methods("GET")
+	router.HandleFunc("/delete", deleteUser).Methods("DELETE")
 
+	// Server Listener
 	err = http.ListenAndServe(":3000",router)
 	if err!=nil {
 		log.Fatal(err)
