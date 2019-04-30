@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -31,7 +31,7 @@ type finalResult struct {
 }
 
 type Claims struct {
-	Email string `json:"Email"`
+	Email string `json:"email"`
 	jwt.StandardClaims
 }
 
@@ -40,6 +40,7 @@ var dB *mongo.Database
 var collection *mongo.Collection
 
 func generateJWT(user User) (string, int64) {
+
 	expirationTime := time.Now().Add(30 * time.Minute)
 	claims := &Claims{
 		Email: user.Email,
@@ -56,7 +57,23 @@ func generateJWT(user User) (string, int64) {
 	return tokenString, expirationTime.Unix()
 }
 
+func authorizeJWT(tokenString string) bool {
 
+	claims := &Claims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	})
+	if !token.Valid {
+		return false
+	}
+	if err != nil {
+		if err == jwt.ErrSignatureInvalid {
+			return false
+		}
+		return false
+	}
+	return true
+}
 
 func registerUser(w http.ResponseWriter, r *http.Request) {
 
@@ -111,16 +128,13 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 		if result.Password == formData.Password {
 
 			tokenString, expirationTime := generateJWT(user)
-			expirationTime1, _ := strconv.ParseInt(string(expirationTime), 10, 64)
+			_, _ = strconv.ParseInt(string(expirationTime), 10, 64)
 
 			if err!=nil {
 				log.Fatal(err)
 			}
-			http.SetCookie(w, &http.Cookie{
-				Name:    "token",
-				Value:   tokenString,
-				Expires: time.Unix(expirationTime1,0),
-			})
+
+			w.Header().Set("token",tokenString)
 
 			finalData.Status = true
 			finalData.Message = "password correct"
@@ -141,6 +155,8 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 
 func deleteUser(w http.ResponseWriter, r *http.Request) {
 
+	tokenString := r.Header.Get("token")
+
 	decoder := json.NewDecoder(r.Body)
 	var formData User
 	err := decoder.Decode(&formData)
@@ -152,28 +168,34 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 	user.Email = formData.Email
 	user.Password = formData.Password
 
-
+	authorize := authorizeJWT(tokenString)
 	result := findUser(collection, user)
 	var finalData finalResult
-	if len(result.Email)>0 {
-		if result.Password == formData.Password {
-			if deleteUse(collection, user) {
-				finalData.Status = true
-				finalData.Message = "delete successful"
-				_ = json.NewEncoder(w).Encode(finalData)
+	if authorize {
+		if len(result.Email) > 0 {
+			if result.Password == formData.Password {
+				if deleteUse(collection, user) {
+					finalData.Status = true
+					finalData.Message = "delete successful"
+					_ = json.NewEncoder(w).Encode(finalData)
+				} else {
+					finalData.Status = false
+					finalData.Message = "delete successful"
+					_ = json.NewEncoder(w).Encode(finalData)
+				}
 			} else {
 				finalData.Status = false
-				finalData.Message = "delete successful"
+				finalData.Message = "password incorrect"
 				_ = json.NewEncoder(w).Encode(finalData)
 			}
 		} else {
 			finalData.Status = false
-			finalData.Message = "password incorrect"
+			finalData.Message = "user not registered"
 			_ = json.NewEncoder(w).Encode(finalData)
 		}
 	} else {
 		finalData.Status = false
-		finalData.Message = "user not registered"
+		finalData.Message = "jwt not authorized"
 		_ = json.NewEncoder(w).Encode(finalData)
 	}
 
@@ -194,7 +216,6 @@ func findUser(collection *mongo.Collection, user User) User {
 
 	var localUser User
 	filter := bson.D{{"email", user.Email}}
-
 	err := collection.FindOne(context.TODO(), filter).Decode(&localUser)
 	if err!=nil {
 		localUser.Email = ""
@@ -234,12 +255,13 @@ func main() {
 	collection = dB.Collection(collectionName)
 
 	// Routers
-	http.HandleFunc("/register", registerUser)
-	http.HandleFunc("/login", loginUser)
-	http.Handle("/delete", isAuthorized(deleteUser))
+	router := mux.NewRouter()
+	router.HandleFunc("/register", registerUser).Methods("POST")
+	router.HandleFunc("/login", loginUser).Methods("GET")
+	router.HandleFunc("/delete", deleteUser).Methods("DELETE")
 
 	// Server Listener
-	err = http.ListenAndServe(":3000",nil)
+	err = http.ListenAndServe(":3000",router)
 	if err!=nil {
 		log.Fatal(err)
 	}
