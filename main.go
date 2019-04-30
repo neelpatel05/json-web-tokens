@@ -7,11 +7,10 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	jwt "github.com/dgrijalva/jwt-go"
 	"log"
 	"net/http"
 	"strconv"
-	"time"
+	jwts "./jwt"
 )
 
 const (
@@ -30,50 +29,10 @@ type finalResult struct {
 	Message string
 }
 
-type Claims struct {
-	Email string `json:"email"`
-	jwt.StandardClaims
-}
 
-var jwtKey = []byte("captainjacksparrow")
 var dB *mongo.Database
 var collection *mongo.Collection
 
-func generateJWT(user User) (string, int64) {
-
-	expirationTime := time.Now().Add(30 * time.Minute)
-	claims := &Claims{
-		Email: user.Email,
-		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: expirationTime.Unix(),
-		},
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(jwtKey)
-	if err!=nil {
-		log.Fatal(err)
-	}
-
-	return tokenString, expirationTime.Unix()
-}
-
-func authorizeJWT(tokenString string) bool {
-
-	claims := &Claims{}
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		return jwtKey, nil
-	})
-	if !token.Valid {
-		return false
-	}
-	if err != nil {
-		if err == jwt.ErrSignatureInvalid {
-			return false
-		}
-		return false
-	}
-	return true
-}
 
 func registerUser(w http.ResponseWriter, r *http.Request) {
 
@@ -127,7 +86,7 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 	if len(result.Email)>0 {
 		if result.Password == formData.Password {
 
-			tokenString, expirationTime := generateJWT(user)
+			tokenString, expirationTime := jwts.GenerateJWT(jwts.User{Email:user.Email})
 			_, _ = strconv.ParseInt(string(expirationTime), 10, 64)
 
 			if err!=nil {
@@ -168,7 +127,7 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 	user.Email = formData.Email
 	user.Password = formData.Password
 
-	authorize := authorizeJWT(tokenString)
+	authorize := jwts.AuthorizeJWT(tokenString)
 	result := findUser(collection, user)
 	var finalData finalResult
 	if authorize {
