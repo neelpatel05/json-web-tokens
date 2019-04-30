@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
@@ -14,7 +15,7 @@ import (
 
 const (
 	databaseName = "go_database"
-	collectioName = "user"
+	collectionName = "user"
 )
 
 type User struct {
@@ -23,8 +24,39 @@ type User struct {
 	Password string
 }
 
+type finalResult struct {
+
+	status bool
+	message string
+}
+
+var dB *mongo.Database
+var collection *mongo.Collection
+
 func registerUser(w http.ResponseWriter, r *http.Request) {
 
+	decoder := json.NewDecoder(r.Body)
+	var formData User
+	err := decoder.Decode(&formData)
+	if err!=nil {
+		log.Fatal(err)
+	}
+
+	var user User
+	user.Email = formData.Email
+	user.Password = formData.Password
+
+	result := createUser(collection, user)
+	var finalData finalResult
+	if result == true {
+		finalData.status = true
+		finalData.message = "registered successfully"
+		_ = json.NewEncoder(w).Encode(finalData)
+	} else {
+		finalData.status = false
+		finalData.message = "not registered"
+		_ = json.NewEncoder(w).Encode(finalData)
+	}
 }
 
 func loginUser(w http.ResponseWriter, r *http.Request) {
@@ -39,20 +71,19 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func createUser(collection *mongo.Collection) {
+func createUser(collection *mongo.Collection, user User) bool {
 
-	var user User
-	user.Email = os.Getenv("EMAIL")
-	user.Password = os.Getenv("PASSWORD")
+	_, err := collection.InsertOne(context.TODO(), user)
 
-	insertResult, err := collection.InsertOne(context.TODO(), user)
 	if err!=nil {
-		log.Fatal(err)
+		return false
+	} else {
+		return true
 	}
-	fmt.Println(insertResult.InsertedID)
+
 }
 
-func findUser(collection *mongo.Collection) {
+func findUser(collection *mongo.Collection, user User) bool {
 
 	var user User
 	filter := bson.D{
@@ -71,10 +102,6 @@ func findUser(collection *mongo.Collection) {
 
 func main() {
 
-	os.Setenv("EMAIL", "dummy@gmail.com")
-	os.Setenv("PASSWORD", "dummy")
-	defer os.Unsetenv("EMAIL")
-	defer os.Unsetenv("PASSWORD")
 
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI("mongodb://localhost:27017"))
 	if err!=nil {
@@ -86,13 +113,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var dB *mongo.Database
-	var collection *mongo.Collection
 	dB = client.Database(databaseName)
-	collection = dB.Collection(collectioName)
-
-	createUser(collection)
-	findUser(collection)
+	collection = dB.Collection(collectionName)
 
 	router := mux.NewRouter()
 	router.HandleFunc("/resgister", registerUser).Methods("POST")
