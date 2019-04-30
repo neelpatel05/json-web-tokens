@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
+	"net/http"
 	"os"
 )
 
@@ -21,6 +23,21 @@ type User struct {
 	Password string
 }
 
+func registerUser(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func loginUser(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func logoutUser(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func deleteUser(w http.ResponseWriter, r *http.Request) {
+
+}
 
 func createUser(collection *mongo.Collection) {
 
@@ -77,4 +94,14 @@ func main() {
 	createUser(collection)
 	findUser(collection)
 
+	router := mux.NewRouter()
+	router.HandleFunc("/resgister", registerUser).Methods("POST")
+	router.HandleFunc("/login", loginUser).Methods("GET")
+	router.HandleFunc("/logout", logoutUser).Methods("GET")
+	router.HandleFunc("/delete", deleteUser).Methods("GET")
+
+	err = http.ListenAndServe(":3000",router)
+	if err!=nil {
+		log.Fatal(err)
+	}
 }
