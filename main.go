@@ -33,14 +33,20 @@ type finalResult struct {
 var dB *mongo.Database
 var collection *mongo.Collection
 
+func cleanUp() {
+	if r := recover(); r!=nil {
+		log.Fatal(r)
+	}
+}
 
 func registerUser(w http.ResponseWriter, r *http.Request) {
+	defer cleanUp()
 
 	decoder := json.NewDecoder(r.Body)
 	var formData User
 	err := decoder.Decode(&formData)
 	if err!=nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	var user User
@@ -69,12 +75,13 @@ func registerUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func loginUser(w http.ResponseWriter, r *http.Request) {
+	defer cleanUp()
 
 	decoder := json.NewDecoder(r.Body)
 	var formData User
 	err := decoder.Decode(&formData)
 	if err!=nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	var user User
@@ -90,7 +97,7 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 			expirationTime := time.Unix(expirationTimeUnix, 0)
 
 			if err!=nil {
-				log.Fatal(err)
+				panic(err)
 			}
 
 			w.Header().Set("token",tokenString)
@@ -114,20 +121,20 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 
 
 func deleteUser(w http.ResponseWriter, r *http.Request) {
-
-	tokenString := r.Header.Get("token")
+	defer cleanUp()
 
 	decoder := json.NewDecoder(r.Body)
 	var formData User
 	err := decoder.Decode(&formData)
 	if err!=nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	var user User
 	user.Email = formData.Email
 	user.Password = formData.Password
 
+	tokenString := r.Header.Get("token")
 	authorize := jwts.AuthorizeJWT(tokenString)
 	result := findUser(collection, user)
 	var finalData finalResult
@@ -162,6 +169,7 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func createUser(collection *mongo.Collection, user User) bool {
+	defer cleanUp()
 
 	_, err := collection.InsertOne(context.TODO(), user)
 	if err!=nil {
@@ -173,6 +181,7 @@ func createUser(collection *mongo.Collection, user User) bool {
 }
 
 func findUser(collection *mongo.Collection, user User) User {
+	defer cleanUp()
 
 	var localUser User
 	filter := bson.D{{"email", user.Email}}
@@ -186,9 +195,9 @@ func findUser(collection *mongo.Collection, user User) User {
 }
 
 func deleteUse(collection *mongo.Collection, user User) bool {
+	defer cleanUp()
 
 	filter := bson.D{{"email", user.Email}}
-
 	result, err := collection.DeleteMany(context.TODO(), filter)
 	if err!=nil {
 		return false
@@ -201,15 +210,16 @@ func deleteUse(collection *mongo.Collection, user User) bool {
 }
 
 func main() {
+	defer cleanUp()
 
 	// Database Connections
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI("mongodb://localhost:27017"))
 	if err!=nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	err = client.Ping(context.TODO(), nil)
 	if err!=nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	dB = client.Database(databaseName)
 	collection = dB.Collection(collectionName)
@@ -223,6 +233,6 @@ func main() {
 	// Server Listener
 	err = http.ListenAndServe(":3000",router)
 	if err!=nil {
-		log.Fatal(err)
+		panic(err)
 	}
 }
