@@ -1,6 +1,7 @@
 package main
 
 import (
+	jwts "./jwt"
 	"context"
 	"encoding/json"
 	"github.com/gorilla/mux"
@@ -9,8 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"net/http"
-	"strconv"
-	jwts "./jwt"
+	"time"
 )
 
 const (
@@ -86,14 +86,15 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 	if len(result.Email)>0 {
 		if result.Password == formData.Password {
 
-			tokenString, expirationTime := jwts.GenerateJWT(jwts.User{Email:user.Email})
-			_, _ = strconv.ParseInt(string(expirationTime), 10, 64)
+			tokenString, expirationTimeUnix := jwts.GenerateJWT(jwts.User{Email:user.Email})
+			expirationTime := time.Unix(expirationTimeUnix, 0)
 
 			if err!=nil {
 				log.Fatal(err)
 			}
 
 			w.Header().Set("token",tokenString)
+			w.Header().Set("Expires",expirationTime.String())
 
 			finalData.Status = true
 			finalData.Message = "password correct"

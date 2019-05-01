@@ -44,6 +44,7 @@ func AuthorizeJWT(tokenString string) bool {
 	if !token.Valid {
 		return false
 	}
+
 	if err != nil {
 		if err == jwt.ErrSignatureInvalid {
 			return false
